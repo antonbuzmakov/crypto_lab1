@@ -1,7 +1,7 @@
 import socket
 import json
 import os
-import hashlib
+import sys
 from cryptography.hazmat.primitives import serialization, hashes
 from cryptography.hazmat.primitives.asymmetric import rsa, padding
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
@@ -11,20 +11,50 @@ from cryptography.hazmat.backends import default_backend
 class AliceClient:
     def __init__(self):
         self.private_key = None
-        self.public_key = None
         self.peer_public_key = None
         self.session_key = None
 
-    def load_keys(self):
-        """Загрузка ключей Алисы"""
-        with open("alice_private.pem", "rb") as f:
-            self.private_key = serialization.load_pem_private_key(
-                f.read(), password=None, backend=default_backend()
-            )
-        with open("bob_public.pem", "rb") as f:
-            self.peer_public_key = serialization.load_pem_public_key(
-                f.read(), backend=default_backend()
-            )
+    def load_my_keys(self):
+        """Загрузка приватного ключа Алисы"""
+        try:
+            with open("alice_private.pem", "rb") as f:
+                self.private_key = serialization.load_pem_private_key(
+                    f.read(), password=None, backend=default_backend()
+                )
+            print("✅ Приватный ключ Алисы загружен")
+        except FileNotFoundError:
+            print("❌ Файл alice_private.pem не найден!")
+            print("Сначала сгенерируй ключи: python generate_keys.py")
+            sys.exit(1)
+
+    def exchange_public_keys(self, client_socket):
+        """Обмен публичными ключами по сети"""
+        print("\n🔄 Обмен публичными ключами...")
+
+        # 1. Получаем публичный ключ Боба
+        print("⏳ Получаю публичный ключ Боба...")
+        size_data = client_socket.recv(4)
+        bob_key_size = int.from_bytes(size_data, "big")
+        bob_pub_key_data = client_socket.recv(bob_key_size)
+
+        # Сохраняем ключ Боба
+        with open("bob_public_received.pem", "wb") as f:
+            f.write(bob_pub_key_data)
+
+        # Загружаем ключ в память
+        self.peer_public_key = serialization.load_pem_public_key(
+            bob_pub_key_data, backend=default_backend()
+        )
+        print("✅ Публичный ключ Боба получен")
+
+        # 2. Отправляем публичный ключ Алисы
+        print("📤 Отправляю публичный ключ Алисы...")
+        with open("alice_public.pem", "rb") as f:
+            alice_pub_key = f.read()
+
+        client_socket.send(len(alice_pub_key).to_bytes(4, "big"))
+        client_socket.send(alice_pub_key)
+        print("✅ Публичный ключ Алисы отправлен")
 
     def rsa_encrypt(self, data):
         """Шифрование RSA"""
@@ -42,7 +72,8 @@ class AliceClient:
         return self.private_key.sign(
             data,
             padding.PSS(
-                mgf=padding.MGF1(hashes.SHA256()), salt_length=padding.PSS.MAX_LENGTH
+                mgf=padding.MGF1(hashes.SHA256()),
+                salt_length=padding.PSS.MAX_LENGTH,
             ),
             hashes.SHA256(),
         )
@@ -83,18 +114,26 @@ class AliceClient:
 
     def start(self, server_ip="127.0.0.1", port=12345):
         """Запуск клиента"""
-        print("🔑 Загружаю ключи Алисы...")
-        self.load_keys()
+        print("=" * 50)
+        print("КЛИЕНТ АЛИСА - ЗАЩИЩЕННЫЙ ЧАТ")
+        print("=" * 50)
+
+        # Загружаем только свой приватный ключ
+        self.load_my_keys()
 
         # Подключаемся к серверу
         client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
         try:
-            print(f"🔗 Подключаюсь к {server_ip}:{port}...")
+            print(f"\n🔗 Подключаюсь к {server_ip}:{port}...")
             client.connect((server_ip, port))
             print("✅ Подключено!")
 
-            # 1. Получаем данные для аутентификации Боба
+            # Этап 1: Обмен публичными ключами
+            self.exchange_public_keys(client)
+
+            # Этап 2: Аутентификация Боба
+            print("\n🔐 Аутентификация Боба...")
             size_data = client.recv(4)
             auth_size = int.from_bytes(size_data, "big")
             auth_data = client.recv(auth_size)
@@ -108,10 +147,10 @@ class AliceClient:
                 print("❌ Ошибка: Неверная подпись Боба!")
                 client.close()
                 return
-
             print("✅ Боб аутентифицирован")
 
-            # 2. Отправляем сессионный ключ
+            # Этап 3: Отправляем сессионный ключ
+            print("\n🔑 Создаю и отправляю сессионный ключ...")
             self.session_key = os.urandom(32)  # AES-256
             encrypted_key = self.rsa_encrypt(self.session_key)
             signature = self.sign_data(encrypted_key)
@@ -124,13 +163,15 @@ class AliceClient:
             client.send(key_data)
             print("✅ Сессионный ключ отправлен")
 
-            # 3. Защищенное общение
-            print("\n💬 ЗАЩИЩЕННЫЙ КАНАЛ УСТАНОВЛЕН")
-            print("==============================")
+            # Этап 4: Защищенное общение
+            print("\n" + "=" * 50)
+            print("💬 ЗАЩИЩЕННЫЙ КАНАЛ УСТАНОВЛЕН")
+            print("=" * 50)
+            print("Введите 'exit' для выхода\n")
 
             while True:
                 # Отправляем сообщение
-                message = input("\n💬 Алиса: ")
+                message = input("💬 Алиса: ")
                 if message.lower() == "exit":
                     break
 
@@ -153,10 +194,18 @@ class AliceClient:
 
         except ConnectionRefusedError:
             print(f"❌ Не удалось подключиться к {server_ip}:{port}")
+            print("Проверьте:")
+            print("1. Сервер запущен")
+            print("2. Правильность IP адреса")
+            print("3. Брандмауэр разрешает подключения")
+        except Exception as e:
+            print(f"❌ Ошибка: {e}")
         finally:
             client.close()
             print("\n👋 Соединение закрыто")
 
 
 if __name__ == "__main__":
-    AliceClient().start()
+    client = AliceClient()
+    # Для Hamachi используй: client.start("25.1.2.3", 12345)
+    client.start()
