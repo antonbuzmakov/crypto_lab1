@@ -56,15 +56,15 @@ class BobServer:
         )
         print("✅ Публичный ключ Алисы получен")
 
-    def rsa_decrypt(self, ciphertext):
-        """Расшифровка RSA"""
-        return self.private_key.decrypt(
-            ciphertext,
-            padding.OAEP(
-                mgf=padding.MGF1(algorithm=hashes.SHA256()),
-                algorithm=hashes.SHA256(),
-                label=None,
+    def sign_data(self, data):
+        """Создание подписи"""
+        return self.private_key.sign(
+            data,
+            padding.PSS(
+                mgf=padding.MGF1(hashes.SHA256()),
+                salt_length=padding.PSS.MAX_LENGTH,
             ),
+            hashes.SHA256(),
         )
 
     def verify_signature(self, data, signature):
@@ -82,6 +82,25 @@ class BobServer:
             return True
         except:
             return False
+
+    def rsa_decrypt(self, ciphertext):
+        """Расшифровка RSA"""
+        return self.private_key.decrypt(
+            ciphertext,
+            padding.OAEP(
+                mgf=padding.MGF1(algorithm=hashes.SHA256()),
+                algorithm=hashes.SHA256(),
+                label=None,
+            ),
+        )
+
+    def aes_encrypt(self, data):
+        """Шифрование AES-GCM"""
+        iv = os.urandom(12)
+        cipher = Cipher(algorithms.AES(self.session_key), modes.GCM(iv))
+        encryptor = cipher.encryptor()
+        ciphertext = encryptor.update(data) + encryptor.finalize()
+        return iv + encryptor.tag + ciphertext
 
     def aes_decrypt(self, encrypted_data):
         """Расшифровка AES-GCM"""
@@ -121,37 +140,50 @@ class BobServer:
 
             # Этап 2: Аутентификация сервера (Боба)
             print("\n🔐 Аутентификация сервера...")
-            nonce = os.urandom(16)
-            signature = self.private_key.sign(
-                nonce,
-                padding.PSS(
-                    mgf=padding.MGF1(hashes.SHA256()),
-                    salt_length=padding.PSS.MAX_LENGTH,
-                ),
-                hashes.SHA256(),
-            )
+            bob_nonce = os.urandom(16)
+            bob_signature = self.sign_data(bob_nonce)
 
             auth_data = json.dumps(
-                {"nonce": nonce.hex(), "signature": signature.hex()}
+                {"nonce": bob_nonce.hex(), "signature": bob_signature.hex()}
             ).encode()
 
             client.send(len(auth_data).to_bytes(4, "big"))
             client.send(auth_data)
-            print("✅ Данные аутентификации отправлены")
+            print("✅ Мои данные аутентификации отправлены")
 
-            # Этап 3: Получаем сессионный ключ
-            print("\n🔑 Ожидаю сессионный ключ...")
+            # Этап 3: Аутентификация Алисы
+            print("\n🔐 Аутентификация Алисы...")
+            size_data = client.recv(4)
+            auth_size = int.from_bytes(size_data, "big")
+            auth_data = client.recv(auth_size)
+
+            message = json.loads(auth_data.decode())
+            alice_nonce = bytes.fromhex(message["nonce"])
+            alice_signature = bytes.fromhex(message["signature"])
+
+            # Проверяем подпись Алисы на её nonce
+            if not self.verify_signature(alice_nonce, alice_signature):
+                print("❌ Ошибка: Неверная подпись Алисы!")
+                print("⚠  Это может быть злоумышленник!")
+                client.send(b"ERROR: Invalid signature")
+                client.close()
+                return
+            print("✅ Алиса аутентифицирована!")
+
+            # Этап 4: Получаем сессионный ключ от Алисы
+            print("\n🔑 Ожидаю сессионный ключ от Алисы...")
             size_data = client.recv(4)
             key_size = int.from_bytes(size_data, "big")
             key_data = client.recv(key_size)
 
             message = json.loads(key_data.decode())
             encrypted_key = bytes.fromhex(message["encrypted_key"])
-            signature = bytes.fromhex(message["signature"])
+            key_signature = bytes.fromhex(message["signature"])
 
-            # Проверяем подпись
-            if not self.verify_signature(encrypted_key, signature):
-                print("❌ Ошибка: Неверная подпись Алисы!")
+            # Проверяем подпись Алисы на зашифрованный ключ
+            if not self.verify_signature(encrypted_key, key_signature):
+                print("❌ Ошибка: Неверная подпись на сессионном ключе!")
+                client.send(b"ERROR: Invalid key signature")
                 client.close()
                 return
 
@@ -159,7 +191,11 @@ class BobServer:
             self.session_key = self.rsa_decrypt(encrypted_key)
             print("✅ Сессионный ключ получен и проверен")
 
-            # Этап 4: Защищенное общение
+            # Отправляем подтверждение Алисе
+            client.send(b"OK")
+            print("✅ Подтверждение отправлено Алисе")
+
+            # Этап 5: Защищенное общение
             print("\n" + "=" * 50)
             print("💬 ЗАЩИЩЕННЫЙ КАНАЛ УСТАНОВЛЕН")
             print("=" * 50)
@@ -169,31 +205,37 @@ class BobServer:
                 # Получаем сообщение
                 size_data = client.recv(4)
                 if not size_data:
+                    print("\n⚠  Алиса разорвала соединение")
                     break
 
                 msg_size = int.from_bytes(size_data, "big")
                 encrypted_msg = client.recv(msg_size)
 
                 # Расшифровываем
-                decrypted = self.aes_decrypt(encrypted_msg).decode()
-                print(f"👤 Алиса: {decrypted}")
+                decrypted = self.aes_decrypt(encrypted_msg)
+
+                # Проверяем, не сообщение ли о выходе
+                if decrypted == b"EXIT":
+                    print("\n👋 Алиса вышла из чата")
+                    # Отправляем подтверждение выхода
+                    exit_resp = self.aes_encrypt(b"EXIT")
+                    client.send(len(exit_resp).to_bytes(4, "big"))
+                    client.send(exit_resp)
+                    break
+
+                print(f"👤 Алиса: {decrypted.decode()}")
 
                 # Отправляем ответ
                 response = input("💬 Боб: ")
                 if response.lower() == "exit":
+                    # Отправляем сообщение о выходе
+                    exit_msg = self.aes_encrypt(b"EXIT")
+                    client.send(len(exit_msg).to_bytes(4, "big"))
+                    client.send(exit_msg)
                     break
 
                 # Шифруем ответ
-                iv = os.urandom(12)
-                cipher = Cipher(algorithms.AES(self.session_key), modes.GCM(iv))
-                encryptor = cipher.encryptor()
-                encrypted_resp = (
-                    iv
-                    + encryptor.tag
-                    + encryptor.update(response.encode())
-                    + encryptor.finalize()
-                )
-
+                encrypted_resp = self.aes_encrypt(response.encode())
                 client.send(len(encrypted_resp).to_bytes(4, "big"))
                 client.send(encrypted_resp)
 

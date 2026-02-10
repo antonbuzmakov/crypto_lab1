@@ -8,6 +8,7 @@ from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.backends import default_backend
 
 
+#!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 class AliceClient:
     def __init__(self):
         self.private_key = None
@@ -56,17 +57,6 @@ class AliceClient:
         client_socket.send(alice_pub_key)
         print("✅ Публичный ключ Алисы отправлен")
 
-    def rsa_encrypt(self, data):
-        """Шифрование RSA"""
-        return self.peer_public_key.encrypt(
-            data,
-            padding.OAEP(
-                mgf=padding.MGF1(algorithm=hashes.SHA256()),
-                algorithm=hashes.SHA256(),
-                label=None,
-            ),
-        )
-
     def sign_data(self, data):
         """Создание подписи"""
         return self.private_key.sign(
@@ -79,7 +69,7 @@ class AliceClient:
         )
 
     def verify_signature(self, data, signature):
-        """Проверка подписи Боба"""
+        """Проверка подписи"""
         try:
             self.peer_public_key.verify(
                 signature,
@@ -93,6 +83,17 @@ class AliceClient:
             return True
         except:
             return False
+
+    def rsa_encrypt(self, data):
+        """Шифрование RSA"""
+        return self.peer_public_key.encrypt(
+            data,
+            padding.OAEP(
+                mgf=padding.MGF1(algorithm=hashes.SHA256()),
+                algorithm=hashes.SHA256(),
+                label=None,
+            ),
+        )
 
     def aes_encrypt(self, data):
         """Шифрование AES-GCM"""
@@ -139,31 +140,58 @@ class AliceClient:
             auth_data = client.recv(auth_size)
 
             message = json.loads(auth_data.decode())
-            nonce = bytes.fromhex(message["nonce"])
-            signature = bytes.fromhex(message["signature"])
+            bob_nonce = bytes.fromhex(message["nonce"])
+            bob_signature = bytes.fromhex(message["signature"])
 
             # Проверяем подпись Боба
-            if not self.verify_signature(nonce, signature):
+            if not self.verify_signature(bob_nonce, bob_signature):
                 print("❌ Ошибка: Неверная подпись Боба!")
+                print("⚠  Это может быть злоумышленник!")
                 client.close()
                 return
             print("✅ Боб аутентифицирован")
 
-            # Этап 3: Отправляем сессионный ключ
+            # Этап 3: Аутентификация Алисы (отправляем свой nonce)
+            print("\n🔐 Аутентифицируюсь у Боба...")
+            alice_nonce = os.urandom(16)
+            alice_signature = self.sign_data(alice_nonce)
+
+            auth_response = json.dumps(
+                {"nonce": alice_nonce.hex(), "signature": alice_signature.hex()}
+            ).encode()
+
+            client.send(len(auth_response).to_bytes(4, "big"))
+            client.send(auth_response)
+            print("✅ Мои данные аутентификации отправлены")
+
+            # Этап 4: Отправляем сессионный ключ
             print("\n🔑 Создаю и отправляю сессионный ключ...")
             self.session_key = os.urandom(32)  # AES-256
+
+            # Шифруем сессионный ключ для Боба
             encrypted_key = self.rsa_encrypt(self.session_key)
-            signature = self.sign_data(encrypted_key)
+
+            # Подписываем зашифрованный ключ
+            key_signature = self.sign_data(encrypted_key)
 
             key_data = json.dumps(
-                {"encrypted_key": encrypted_key.hex(), "signature": signature.hex()}
+                {"encrypted_key": encrypted_key.hex(), "signature": key_signature.hex()}
             ).encode()
 
             client.send(len(key_data).to_bytes(4, "big"))
             client.send(key_data)
             print("✅ Сессионный ключ отправлен")
 
-            # Этап 4: Защищенное общение
+            # Получаем подтверждение от Боба
+            print("\n⏳ Ожидаю подтверждения от Боба...")
+            confirm_data = client.recv(1024).decode()
+            if confirm_data == "OK":
+                print("✅ Боб подтвердил получение ключа")
+            else:
+                print(f"❌ Ошибка от Боба: {confirm_data}")
+                return
+
+            # Этап 5: Защищенное общение
             print("\n" + "=" * 50)
             print("💬 ЗАЩИЩЕННЫЙ КАНАЛ УСТАНОВЛЕН")
             print("=" * 50)
@@ -173,6 +201,10 @@ class AliceClient:
                 # Отправляем сообщение
                 message = input("💬 Алиса: ")
                 if message.lower() == "exit":
+                    # Отправляем сообщение о выходе
+                    exit_msg = self.aes_encrypt(b"EXIT")
+                    client.send(len(exit_msg).to_bytes(4, "big"))
+                    client.send(exit_msg)
                     break
 
                 # Шифруем и отправляем
@@ -183,14 +215,19 @@ class AliceClient:
                 # Получаем ответ
                 size_data = client.recv(4)
                 if not size_data:
+                    print("\n⚠  Боб разорвал соединение")
                     break
 
                 resp_size = int.from_bytes(size_data, "big")
                 encrypted_resp = client.recv(resp_size)
 
-                # Расшифровываем ответ
-                decrypted = self.aes_decrypt(encrypted_resp).decode()
-                print(f"👤 Боб: {decrypted}")
+                # Проверяем, не сообщение ли о выходе
+                decrypted = self.aes_decrypt(encrypted_resp)
+                if decrypted == b"EXIT":
+                    print("\n👋 Боб вышел из чата")
+                    break
+
+                print(f"👤 Боб: {decrypted.decode()}")
 
         except ConnectionRefusedError:
             print(f"❌ Не удалось подключиться к {server_ip}:{port}")
@@ -207,5 +244,5 @@ class AliceClient:
 
 if __name__ == "__main__":
     client = AliceClient()
-    # Для Hamachi используй: client.start("25.1.2.3", 12345)
+    # Для Hamachi: client.start("25.1.2.3", 12345)
     client.start()
