@@ -257,7 +257,7 @@ class SecureChat:
         print("✅ Сессионный ключ получен и проверен")
 
         # Отправляем подтверждение
-        sock.send(b"OK")
+        self.send_message(sock, b"OK")  # Добавить b перед строкой
         print("✅ Подтверждение отправлено")
         return True
 
