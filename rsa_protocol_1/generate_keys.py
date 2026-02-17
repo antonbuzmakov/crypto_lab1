@@ -11,7 +11,7 @@ from cryptography.hazmat.backends import default_backend
 
 def generate_keys(username):
     """Генерация ключей для пользователя"""
-    print(f"\n🔑 Генерирую ключи для {username}...")
+    print(f"\nГенерирую ключи для {username}...")
 
     # Генерация ключей RSA 2048 бит
     private_key = rsa.generate_private_key(
@@ -40,32 +40,33 @@ def generate_keys(username):
             )
         )
 
-    print(f"✅ Приватный ключ сохранен: {priv_file}")
-    print(f"✅ Публичный ключ сохранен: {pub_file}")
+    print(f"Приватный ключ сохранен: {priv_file}")
+    print(f"Публичный ключ сохранен: {pub_file}")
     return priv_file, pub_file
 
 
-def main():
+def main(username = ""):
     print("=" * 50)
     print("ГЕНЕРАЦИЯ RSA КЛЮЧЕЙ")
     print("=" * 50)
 
-    print("\n👤 Введите ваше имя (например, alice или bob):")
-    username = input("Имя: ").strip().lower()
+    if (not username):
+        print("\nВведите ваше имя (например, alice или bob):")
+        username = input("Имя: ").strip().lower()
 
     if not username:
-        print("❌ Имя не может быть пустым")
+        print("Имя не может быть пустым")
         return
 
     generate_keys(username)
 
-    print("\n" + "=" * 50)
-    print("📋 ИНСТРУКЦИЯ:")
-    print("=" * 50)
+    #print("\n" + "=" * 50)
+    #print("ИНСТРУКЦИЯ:")
+    #print("=" * 50)
     print(
-        f"1. Твои ключи сгенерированы: {username}_private.pem и {username}_public.pem"
+        f"Твои ключи сгенерированы: {username}_private.pem и {username}_public.pem"
     )
-    print("2. Запусти основную программу: python secure_chat.py")
+    #print("2. Запусти основную программу: python secure_chat.py")
 
 
 if __name__ == "__main__":

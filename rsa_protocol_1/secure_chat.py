@@ -13,6 +13,7 @@ from cryptography.hazmat.primitives import serialization, hashes
 from cryptography.hazmat.primitives.asymmetric import rsa, padding
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.backends import default_backend
+import generate_keys
 
 
 class SecureChat:
@@ -33,12 +34,12 @@ class SecureChat:
                 self.private_key = serialization.load_pem_private_key(
                     f.read(), password=None, backend=default_backend()
                 )
-            print(f"✅ Приватный ключ {self.username} загружен")
+            print(f"Приватный ключ {self.username} загружен")
             return True
 
 
         except FileNotFoundError:
-            print(f"❌ Файл {self.username}_private.pem не найден!")
+            print(f"Файл {self.username}_private.pem не найден!")
             print("Сначала сгенерируй ключи: python generate_keys.py")
             return False
 
@@ -125,7 +126,7 @@ class SecureChat:
 
     def initiator_protocol(self, sock):
         """Протокол для инициатора (кто первый начал)"""
-        print("\n📞 Запуск протокола как инициатор...")
+        print("\nЗапуск протокола как инициатор...")
 
         # Шаг 1: Отправляем свой публичный ключ
         print("📤 Отправляю свой публичный ключ...")
@@ -134,15 +135,15 @@ class SecureChat:
         self.send_message(sock, my_pub_key)
 
         # Шаг 2: Получаем публичный ключ собеседника
-        print("⏳ Ожидаю публичный ключ собеседника...")
+        print("Ожидаю публичный ключ собеседника...")
         peer_pub_key = self.receive_message(sock)
         self.peer_public_key = serialization.load_pem_public_key(
             peer_pub_key, backend=default_backend()
         )
-        print("✅ Публичный ключ собеседника получен")
+        print("Публичный ключ собеседника получен")
 
         # Шаг 3: Аутентификация (двусторонняя)
-        print("\n🔐 Двусторонняя аутентификация...")
+        print("\nДвусторонняя аутентификация...")
 
         # Отправляем свой nonce с подписью
         my_nonce = os.urandom(16)
@@ -151,7 +152,7 @@ class SecureChat:
             {"nonce": my_nonce.hex(), "signature": my_signature.hex()}
         ).encode()
         self.send_message(sock, auth_data)
-        print("📤 Отправил свой nonce для аутентификации")
+        print("Отправил свой nonce для аутентификации")
 
         # Получаем и проверяем nonce собеседника
         peer_auth = json.loads(self.receive_message(sock).decode())
@@ -159,12 +160,12 @@ class SecureChat:
         peer_signature = bytes.fromhex(peer_auth["signature"])
 
         if not self.verify_signature(peer_nonce, peer_signature):
-            print("❌ Ошибка: Неверная подпись собеседника!")
+            print("Ошибка: Неверная подпись собеседника!")
             return False
-        print("✅ Собеседник аутентифицирован")
+        print("Собеседник аутентифицирован")
 
         # Шаг 4: Создание и отправка сессионного ключа
-        print("\n🔑 Создание сессионного ключа...")
+        print("\nСоздание сессионного ключа...")
         self.session_key = os.urandom(32)  # AES-256
 
         # Шифруем ключ публичным ключом собеседника
@@ -178,28 +179,28 @@ class SecureChat:
         ).encode()
 
         self.send_message(sock, key_data)
-        print("✅ Сессионный ключ отправлен")
+        print("Сессионный ключ отправлен")
 
         # Ждем подтверждение
         confirm = self.receive_message(sock).decode()
         if confirm == "OK":
-            print("✅ Собеседник подтвердил получение ключа")
+            print("Собеседник подтвердил получение ключа")
             return True
         else:
-            print("❌ Ошибка подтверждения")
+            print("Ошибка подтверждения")
             return False
 
     def responder_protocol(self, sock):
         """Протокол для отвечающего (кто принял соединение)"""
-        print("\n📞 Запуск протокола как отвечающий...")
+        print("\nЗапуск протокола как отвечающий...")
 
         # Шаг 1: Получаем публичный ключ инициатора
-        print("⏳ Ожидаю публичный ключ инициатора...")
+        print("Ожидаю публичный ключ инициатора...")
         peer_pub_key = self.receive_message(sock)
         self.peer_public_key = serialization.load_pem_public_key(
             peer_pub_key, backend=default_backend()
         )
-        print("✅ Публичный ключ инициатора получен")
+        print("Публичный ключ инициатора получен")
 
         # Шаг 2: Отправляем свой публичный ключ
         print("📤 Отправляю свой публичный ключ...")
@@ -208,7 +209,7 @@ class SecureChat:
         self.send_message(sock, my_pub_key)
 
         # Шаг 3: Аутентификация
-        print("\n🔐 Двусторонняя аутентификация...")
+        print("\nДвусторонняя аутентификация...")
 
         # Получаем и проверяем nonce инициатора
         initiator_auth = json.loads(self.receive_message(sock).decode())
@@ -216,9 +217,9 @@ class SecureChat:
         initiator_signature = bytes.fromhex(initiator_auth["signature"])
 
         if not self.verify_signature(initiator_nonce, initiator_signature):
-            print("❌ Ошибка: Неверная подпись инициатора!")
+            print("Ошибка: Неверная подпись инициатора!")
             return False
-        print("✅ Инициатор аутентифицирован")
+        print("Инициатор аутентифицирован")
 
         # Отправляем свой nonce с подписью
         my_nonce = os.urandom(16)
@@ -227,33 +228,33 @@ class SecureChat:
             {"nonce": my_nonce.hex(), "signature": my_signature.hex()}
         ).encode()
         self.send_message(sock, auth_data)
-        print("📤 Отправил свой nonce для аутентификации")
+        print("Отправил свой nonce для аутентификации")
 
         # Шаг 4: Получение сессионного ключа
-        print("\n🔑 Ожидаю сессионный ключ...")
+        print("\nОжидаю сессионный ключ...")
         key_data = json.loads(self.receive_message(sock).decode())
         encrypted_key = bytes.fromhex(key_data["encrypted_key"])
         key_signature = bytes.fromhex(key_data["signature"])
 
         # Проверяем подпись на ключе
         if not self.verify_signature(encrypted_key, key_signature):
-            print("❌ Ошибка: Неверная подпись на сессионном ключе!")
+            print("Ошибка: Неверная подпись на сессионном ключе!")
             sock.send(b"ERROR")
             return False
 
         # Расшифровываем ключ
         self.session_key = self.rsa_decrypt(encrypted_key)
-        print("✅ Сессионный ключ получен и проверен")
+        print("Сессионный ключ получен и проверен")
 
         # Отправляем подтверждение
         self.send_message(sock, b"OK")
-        print("✅ Подтверждение отправлено")
+        print("Подтверждение отправлено")
         return True
 
     def chat_session(self, sock):
         """Защищенная сессия общения"""
         print("\n" + "=" * 50)
-        print("💬 ЗАЩИЩЕННЫЙ КАНАЛ УСТАНОВЛЕН")
+        print("ЗАЩИЩЕННЫЙ КАНАЛ УСТАНОВЛЕН")
         print("=" * 50)
         print("Введите 'exit' для выхода\n")
 
@@ -263,22 +264,22 @@ class SecureChat:
                 try:
                     data = self.receive_message(sock)
                     if not data:
-                        print("\n⚠  Соединение разорвано")
+                        print("\nСоединение разорвано")
                         self.running = False
                         break
 
                     decrypted = self.aes_decrypt(data)
                     if decrypted == b"EXIT":
-                        print("\n👋 Собеседник вышел из чата")
+                        print("\nСобеседник вышел из чата")
                         self.running = False
                         break
 
-                    print(f"\n👤 Собеседник: {decrypted.decode()}")
-                    print(f"💬 {self.username}: ", end="", flush=True)
+                    print(f"\nСобеседник: {decrypted.decode()}")
+                    print(f"{self.username}: ", end="", flush=True)
 
                 except Exception as e:
                     if self.running:
-                        print(f"\n❌ Ошибка приема: {e}")
+                        print(f"\nОшибка приема: {e}")
                         self.running = False
                     break
 
@@ -290,13 +291,13 @@ class SecureChat:
         # Основной цикл отправки сообщений
         try:
             while self.running:
-                message = input(f"💬 {self.username}: ")
+                message = input(f"{self.username}: ")
 
                 if message.lower() == "exit":
                     # Отправляем сообщение о выходе
                     encrypted = self.aes_encrypt(b"EXIT")
                     self.send_message(sock, encrypted)
-                    print("👋 Выход из чата...")
+                    print("Выход из чата...")
                     self.running = False
                     break
 
@@ -305,10 +306,10 @@ class SecureChat:
                 self.send_message(sock, encrypted)
 
         except KeyboardInterrupt:
-            print("\n\n👋 Прерывание пользователя")
+            print("\n\nПрерывание пользователя")
             self.running = False
         except Exception as e:
-            print(f"\n❌ Ошибка: {e}")
+            print(f"\nОшибка: {e}")
 
     def start_server(self, port):
         """Запуск в режиме сервера (ожидание подключения)"""
@@ -318,17 +319,17 @@ class SecureChat:
         try:
             server.bind(("0.0.0.0", port))
             server.listen(1)
-            print(f"\n🎯 Ожидаю подключение на порту {port}...")
+            print(f"\nОжидаю подключение на порту {port}...")
 
             self.connection, addr = server.accept()
-            print(f"✅ Подключение от {addr[0]}:{addr[1]}")
+            print(f"Подключение от {addr[0]}:{addr[1]}")
 
             # Запускаем протокол как отвечающий
             if self.responder_protocol(self.connection):
                 self.chat_session(self.connection)
 
         except Exception as e:
-            print(f"❌ Ошибка сервера: {e}")
+            print(f"Ошибка сервера: {e}")
         finally:
             server.close()
 
@@ -337,16 +338,16 @@ class SecureChat:
         client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
         try:
-            print(f"\n🔗 Подключаюсь к {peer_ip}:{port}...")
+            print(f"\nПодключаюсь к {peer_ip}:{port}...")
             client.connect((peer_ip, port))
-            print("✅ Подключено!")
+            print("Подключено!")
 
             # Запускаем протокол как инициатор
             if self.initiator_protocol(client):
                 self.chat_session(client)
 
         except Exception as e:
-            print(f"❌ Ошибка клиента: {e}")
+            print(f"Ошибка клиента: {e}")
         finally:
             client.close()
 
@@ -359,15 +360,16 @@ class SecureChat:
 
 def main():
     print("=" * 50)
-    print("🔐 ЗАЩИЩЕННЫЙ ЧАТ НА ОСНОВЕ RSA")
+    print("ЗАЩИЩЕННЫЙ ЧАТ НА ОСНОВЕ RSA")
     print("=" * 50)
 
     # Запрашиваем имя пользователя
-    username = input("\n👤 Введите ваше имя (alice/bob): ").strip().lower()
+    username = input("\nВведите ваше имя (alice/bob): ").strip().lower()
     if username not in ["alice", "bob"]:
-        print("❌ Имя должно быть alice или bob")
+        print("Имя должно быть alice или bob")
         return
 
+    generate_keys.main(username=username)
     # Создаем экземпляр чата
     chat = SecureChat(username)
 
@@ -376,7 +378,7 @@ def main():
         return
 
     print("\n" + "=" * 50)
-    print("📋 РЕЖИМ РАБОТЫ:")
+    print("РЕЖИМ РАБОТЫ:")
     print("=" * 50)
     print("1. Ожидать подключение (сервер)")
     print("2. Подключиться к собеседнику (клиент)")
@@ -397,10 +399,10 @@ def main():
         chat.start_client(peer_ip, port)
 
     else:
-        print("❌ Неверный выбор")
+        print("Неверный выбор")
         return
 
-    print("\n👋 Чат завершен")
+    print("\nЧат завершен")
 
 
 if __name__ == "__main__":
