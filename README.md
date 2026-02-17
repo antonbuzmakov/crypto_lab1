@@ -44,19 +44,17 @@
 
 ## ГЕНЕРАЦИЯ КЛЮЧЕЙ
 
-На каждом участнике: `python generate_keys.py` → введите имя (alice или bob).  
-Создаются файлы:
+На каждом участнике создаются файлы:
 
 - `alice_private.pem` / `bob_private.pem` (секретные!)
 - `alice_public.pem` / `bob_public.pem` (для обмена)
 
 ## ОБМЕН КЛЮЧАМИ
 
-1. Алиса отправляет `alice_public.pem` Бобу → Боб сохраняет как `peer_public.pem`
-2. Боб отправляет `bob_public.pem` Алисе → Алиса сохраняет как `peer_public.pem`
+1. Алиса отправляет `alice_public.pem` Бобу
+2. Боб отправляет `bob_public.pem` Алисе
 
 ## СОЗДАННЫЕ ФАЙЛЫ
 
 - `alice_private.pem` / `bob_private.pem` — секретные ключи
 - `alice_public.pem` / `bob_public.pem` — публичные ключи
-- `peer_public.pem` — полученный ключ собеседника
