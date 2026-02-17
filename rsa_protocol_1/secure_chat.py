@@ -34,19 +34,8 @@ class SecureChat:
                     f.read(), password=None, backend=default_backend()
                 )
             print(f"✅ Приватный ключ {self.username} загружен")
+            return True
 
-            # Загружаем публичный ключ собеседника
-            try:
-                with open("peer_public.pem", "rb") as f:
-                    self.peer_public_key = serialization.load_pem_public_key(
-                        f.read(), backend=default_backend()
-                    )
-                print("✅ Публичный ключ собеседника загружен")
-                return True
-            except FileNotFoundError:
-                print("❌ Файл peer_public.pem не найден!")
-                print("Сначала получи публичный ключ собеседника")
-                return False
 
         except FileNotFoundError:
             print(f"❌ Файл {self.username}_private.pem не найден!")
@@ -257,7 +246,7 @@ class SecureChat:
         print("✅ Сессионный ключ получен и проверен")
 
         # Отправляем подтверждение
-        self.send_message(sock, b"OK")  # Добавить b перед строкой
+        self.send_message(sock, b"OK")
         print("✅ Подтверждение отправлено")
         return True
 

@@ -65,9 +65,7 @@ def main():
     print(
         f"1. Твои ключи сгенерированы: {username}_private.pem и {username}_public.pem"
     )
-    print("2. Отправь свой публичный ключ собеседнику любым способом")
-    print("3. Получи публичный ключ собеседника и сохрани как peer_public.pem")
-    print("4. Запусти основную программу: python secure_chat.py")
+    print("2. Запусти основную программу: python secure_chat.py")
 
 
 if __name__ == "__main__":
